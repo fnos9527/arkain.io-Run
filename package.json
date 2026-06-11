@@ -1,0 +1,9 @@
+{
+  "name": "arkain-checkin",
+  "version": "1.0.0",
+  "description": "Arkain daily check-in automation",
+  "main": "checkin.js",
+  "dependencies": {
+    "playwright": "^1.44.0"
+  }
+}
