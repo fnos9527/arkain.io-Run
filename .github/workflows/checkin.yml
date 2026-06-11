@@ -3,7 +3,7 @@ name: Arkain Daily Check-in
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'  # UTC 02:00，可配合 cron-job.org 替代
+    - cron: '0 0 * * *'  # UTC 02:00，可配合 cron-job.org 替代
 
 jobs:
   checkin:
