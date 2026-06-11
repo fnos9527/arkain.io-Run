@@ -2,8 +2,9 @@ name: Arkain Daily Check-in
 
 on:
   workflow_dispatch:
+  # 用 cron-job.org 触发 workflow_dispatch 更可靠，这里保留作备用
   schedule:
-    - cron: '0 0 * * *'  # UTC 02:00，可配合 cron-job.org 替代
+    - cron: '0 0 * * *'
 
 jobs:
   checkin:
@@ -20,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install Playwright browsers
+      - name: Install Playwright Chromium
         run: npx playwright install chromium --with-deps
 
       - name: Run check-in script
@@ -30,3 +31,13 @@ jobs:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: node checkin.js
+
+      # 无论成功失败，都把截图上传为 Artifact，方便排查
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: /tmp/arkain_*.png
+          if-no-files-found: ignore
+          retention-days: 3
