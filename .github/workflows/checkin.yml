@@ -1,0 +1,32 @@
+name: Arkain Daily Check-in
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'  # UTC 02:00，可配合 cron-job.org 替代
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run check-in script
+        env:
+          ARKAIN_EMAIL: ${{ secrets.ARKAIN_EMAIL }}
+          ARKAIN_PASSWORD: ${{ secrets.ARKAIN_PASSWORD }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: node checkin.js
