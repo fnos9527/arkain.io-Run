@@ -27,59 +27,48 @@ async function screenshot(page, name) {
   } catch (e) { console.log('截图失败:', e.message); }
 }
 
-// 关闭页面上所有可能出现的弹窗（cookie + 功能介绍）
+// 关闭弹窗（cookie + 功能介绍）
 async function dismissPopups(page) {
   console.log('检查并关闭弹窗...');
 
-  // 1. Cookie 弹窗："Accept all" 或 "Confirm my choices"
-  const cookieSelectors = [
-    'button:has-text("Accept all")',
-    'button:has-text("Confirm my choices")',
-    'button:has-text("Accept")',
-  ];
-  for (const sel of cookieSelectors) {
+  // Cookie 弹窗
+  for (const sel of ['button:has-text("Accept all")', 'button:has-text("Confirm my choices")']) {
     try {
       const el = page.locator(sel).first();
-      if (await el.isVisible({ timeout: 3000 })) {
+      if (await el.isVisible({ timeout: 2000 })) {
         await el.click();
         console.log(`已关闭 cookie 弹窗 (${sel})`);
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(600);
         break;
       }
     } catch {}
   }
 
-  // 2. 功能介绍弹窗（"Plan Mode" 那个）：点 X 关闭
-  //    关闭按钮通常是 aria-label="Close" 或 role="dialog" 内的 × 按钮
-  const closeSelectors = [
+  // 功能介绍弹窗（× 按钮）
+  for (const sel of [
     '[role="dialog"] button[aria-label="Close"]',
     '[role="dialog"] button[aria-label="close"]',
     '[role="dialog"] button:has-text("×")',
     '[role="dialog"] button:has-text("✕")',
-    // 截图里右上角的 × 按钮
-    'button.close',
-    '[aria-label="Close"]',
-    '[aria-label="close"]',
-  ];
-  for (const sel of closeSelectors) {
+    'button[aria-label="Close"]',
+  ]) {
     try {
       const el = page.locator(sel).first();
-      if (await el.isVisible({ timeout: 3000 })) {
+      if (await el.isVisible({ timeout: 2000 })) {
         await el.click();
         console.log(`已关闭功能介绍弹窗 (${sel})`);
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(600);
         break;
       }
     } catch {}
   }
 
-  // 3. 如果还有对话框（比如多步骤的 Next 按钮），按 Escape 关掉
+  // 兜底：Escape
   try {
-    const dialog = page.locator('[role="dialog"]').first();
-    if (await dialog.isVisible({ timeout: 2000 })) {
+    if (await page.locator('[role="dialog"]').first().isVisible({ timeout: 1000 })) {
       await page.keyboard.press('Escape');
       console.log('已按 Escape 关闭残余弹窗');
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(500);
     }
   } catch {}
 }
@@ -98,7 +87,6 @@ async function main() {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
-
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     viewport: { width: 1280, height: 800 },
@@ -110,106 +98,133 @@ async function main() {
   const page = await context.newPage();
 
   try {
-    // ── 步骤 1：打开登录页 ────────────────────────────────────────────────
+    // ── 步骤 1：登录 ──────────────────────────────────────────────────────
     console.log('=== 步骤 1：打开登录页 ===');
-    await page.goto('https://account.arkain.io/login', {
-      waitUntil: 'domcontentloaded',   // 不等 networkidle，SPA 用 domcontentloaded
-      timeout: 30000,
-    });
-    await page.waitForSelector('input[placeholder="Your E-mail"]', {
-      state: 'visible',
-      timeout: 20000,
-    });
-    console.log('登录页已加载');
-
-    // 关掉登录页可能出现的 cookie 弹窗
+    await page.goto('https://account.arkain.io/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForSelector('input[placeholder="Your E-mail"]', { state: 'visible', timeout: 20000 });
     await dismissPopups(page);
-    await screenshot(page, 'login_page');
 
-    // ── 步骤 2：填写表单 ──────────────────────────────────────────────────
     console.log('=== 步骤 2：填写邮箱密码 ===');
-    // 从截图确认 placeholder 是 "Your E-mail" 和 "Your Password"
     await page.locator('input[placeholder="Your E-mail"]').fill(email);
-    console.log('邮箱已填写');
     await page.locator('input[type="password"]').fill(password);
-    console.log('密码已填写');
     await screenshot(page, 'before_login');
 
-    // ── 步骤 3：点击 Login ────────────────────────────────────────────────
-    console.log('=== 步骤 3：点击 Login 按钮 ===');
+    console.log('=== 步骤 3：点击 Login ===');
     await page.locator('button:has-text("Login")').click();
-    console.log('已点击 Login');
 
-    // ── 步骤 4：等待跳转到 dashboard ─────────────────────────────────────
-    // 日志显示跳转路径：account → auth/callback → ap-south-1.arkain.io/dashboard
-    // 用 waitForURL 只等 domcontentloaded，不等 networkidle
-    console.log('=== 步骤 4：等待跳转 dashboard ===');
-    await page.waitForURL('**/dashboard**', {
-      waitUntil: 'domcontentloaded',
-      timeout: 40000,
-    });
+    console.log('=== 步骤 4：等待进入 dashboard ===');
+    await page.waitForURL('**/dashboard**', { waitUntil: 'domcontentloaded', timeout: 40000 });
     console.log('已进入 dashboard:', page.url());
-
-    // 等待页面主体渲染（不用 networkidle，避免超时）
     await page.waitForTimeout(3000);
-    await screenshot(page, 'dashboard_raw');
 
-    // ── 步骤 5：关闭 dashboard 上的弹窗 ──────────────────────────────────
-    console.log('=== 步骤 5：关闭 dashboard 弹窗 ===');
+    // 关闭 dashboard 上的弹窗
     await dismissPopups(page);
     await screenshot(page, 'dashboard_clean');
 
-    // ── 步骤 6：读取签到前积分 ────────────────────────────────────────────
-    console.log('=== 步骤 6：读取签到前积分 ===');
+    // ── 步骤 5：读取签到前积分 ────────────────────────────────────────────
+    console.log('=== 步骤 5：读取签到前积分 ===');
     let creditsBefore = null;
     try {
-      const creditsEl = page.locator('text=/\\d+\\s*credits\\s*left/i').first();
-      await creditsEl.waitFor({ state: 'visible', timeout: 10000 });
-      creditsBefore = parseCredits(await creditsEl.textContent());
+      const el = page.locator('text=/\\d+\\s*credits\\s*left/i').first();
+      await el.waitFor({ state: 'visible', timeout: 8000 });
+      creditsBefore = parseCredits(await el.textContent());
       console.log('签到前积分:', creditsBefore);
-    } catch {
-      console.log('未能读取签到前积分');
-    }
+    } catch { console.log('未能读取签到前积分'); }
 
-    // ── 步骤 7：点击 D+1 签到入口（右上角，标记①） ───────────────────────
-    console.log('=== 步骤 7：点击 D+1 入口 ===');
-    let d1Btn = null;
-    const d1Candidates = [
-      'button:has-text("D+1")',
-      'text=D+1',
-      '[class*="daily"]',
-      '[class*="checkin"]',
-      '[class*="check-in"]',
+    // ── 步骤 6：打开签到弹窗 ──────────────────────────────────────────────
+    // 从截图确认：有两个入口，优先用底部彩色浮动按钮 "Daily check-in"
+    // 备用：右上角 D+N 按钮（是 div/span 不是 button，用 text 选择器）
+    console.log('=== 步骤 6：点击签到入口 ===');
+
+    // 先打印右上角区域的 HTML，帮助确认 D+N 的真实结构
+    try {
+      const topbarHtml = await page.evaluate(() => {
+        // 找包含 "D+" 文字的元素
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (/D\+\d/.test(node.textContent)) {
+            return node.parentElement.outerHTML;
+          }
+        }
+        return '未找到 D+ 元素';
+      });
+      console.log('D+N 元素 HTML:', topbarHtml);
+    } catch {}
+
+    // 尝试所有可能的签到入口选择器
+    const checkinEntrySelectors = [
+      // 底部浮动按钮（从截图看最醒目）
+      'button:has-text("Daily check-in")',
+      '[class*="daily-check"]:visible',
+      '[class*="dailyCheck"]:visible',
+      // 右上角 D+N（可能是 div/span，用 :has-text 宽泛匹配）
+      'button:has-text("D+")',
+      '*:has-text("D+1"):visible',
+      '*:has-text("D+2"):visible',
+      '*:has-text("D+3"):visible',
+      // 用 text 选择器匹配任意含 D+ 数字的元素
+      'text=/D\\+\\d+/',
     ];
-    for (const sel of d1Candidates) {
+
+    let checkinEntry = null;
+    for (const sel of checkinEntrySelectors) {
       try {
         const el = page.locator(sel).first();
-        if (await el.isVisible({ timeout: 4000 })) {
-          d1Btn = el;
-          console.log(`D+1 选择器: ${sel}`);
+        if (await el.isVisible({ timeout: 3000 })) {
+          checkinEntry = el;
+          console.log(`找到签到入口: ${sel}`);
           break;
         }
       } catch {}
     }
-    if (!d1Btn) {
-      await screenshot(page, 'd1_not_found');
-      throw new Error('找不到 D+1 签到入口按钮');
+
+    if (!checkinEntry) {
+      // 最后手段：用 JS 找页面上所有含 "Daily check-in" 或 "D+" 文字的可点击元素
+      console.log('尝试 JS 查找签到入口...');
+      const found = await page.evaluate(() => {
+        const all = document.querySelectorAll('*');
+        for (const el of all) {
+          const t = el.textContent?.trim();
+          if ((t === 'Daily check-in' || /^D\+\d+$/.test(t)) && el.children.length === 0) {
+            el.style.outline = '3px solid red';
+            return el.outerHTML;
+          }
+        }
+        return null;
+      });
+      console.log('JS 查找结果:', found);
+      await screenshot(page, 'checkin_entry_debug');
+      throw new Error('找不到签到入口，请查看截图 checkin_entry_debug');
     }
-    await d1Btn.click();
-    console.log('已点击 D+1');
+
+    await checkinEntry.click();
+    console.log('已点击签到入口');
     await page.waitForTimeout(1500);
     await screenshot(page, 'checkin_modal');
 
-    // ── 步骤 8：点击"Daily check-in and receive credit"（标记②） ─────────
-    console.log('=== 步骤 8：点击签到按钮 ===');
-    let modalBtn = null;
-    const modalCandidates = [
+    // ── 步骤 7：点击弹窗内签到按钮 ──────────────────────────────────────
+    console.log('=== 步骤 7：点击签到弹窗按钮 ===');
+
+    // 先打印弹窗内容帮助调试
+    try {
+      const dialogHtml = await page.evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        return dialog ? dialog.innerHTML.substring(0, 1000) : '无 dialog';
+      });
+      console.log('弹窗内容:', dialogHtml);
+    } catch {}
+
+    const modalBtnSelectors = [
       'button:has-text("Daily check-in and receive credit")',
       'button:has-text("Daily check-in")',
       'button:has-text("Check in")',
       'button:has-text("Receive")',
+      '[role="dialog"] button:not([aria-label])',
     ];
-    for (const sel of modalCandidates) {
+
+    let modalBtn = null;
+    for (const sel of modalBtnSelectors) {
       try {
         const el = page.locator(sel).first();
         if (await el.isVisible({ timeout: 5000 })) {
@@ -219,37 +234,35 @@ async function main() {
         }
       } catch {}
     }
+
     if (!modalBtn) {
       await screenshot(page, 'modal_not_found');
       throw new Error('找不到签到弹窗按钮');
     }
+
     await modalBtn.click();
     console.log('已点击签到按钮');
     await page.waitForTimeout(2000);
 
-    // ── 步骤 9：刷新页面，读取签到后积分（标记③） ───────────────────────
-    console.log('=== 步骤 9：刷新页面读取积分 ===');
+    // ── 步骤 8：刷新读取签到后积分 ───────────────────────────────────────
+    console.log('=== 步骤 8：刷新读取积分 ===');
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(3000);
-    // 刷新后可能再次出现弹窗，再关一次
     await dismissPopups(page);
 
     let creditsAfter = null;
     try {
-      const creditsEl = page.locator('text=/\\d+\\s*credits\\s*left/i').first();
-      await creditsEl.waitFor({ state: 'visible', timeout: 10000 });
-      creditsAfter = parseCredits(await creditsEl.textContent());
+      const el = page.locator('text=/\\d+\\s*credits\\s*left/i').first();
+      await el.waitFor({ state: 'visible', timeout: 10000 });
+      creditsAfter = parseCredits(await el.textContent());
       console.log('签到后积分:', creditsAfter);
-    } catch {
-      console.log('未能读取签到后积分');
-    }
+    } catch { console.log('未能读取签到后积分'); }
+
     await screenshot(page, 'final');
 
-    // ── 步骤 10：发送 TG 通知 ─────────────────────────────────────────────
-    console.log('=== 步骤 10：发送 TG 通知 ===');
+    // ── 步骤 9：TG 通知 ───────────────────────────────────────────────────
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
     let message = '';
-
     if (creditsAfter !== null && creditsBefore !== null) {
       const gained = creditsAfter - creditsBefore;
       message =
@@ -257,20 +270,13 @@ async function main() {
         `📅 时间：${now}\n` +
         `💰 签到前：${creditsBefore} credits\n` +
         `💰 签到后：${creditsAfter} credits\n` +
-        `🎁 本次获得：<b>+${gained > 0 ? gained : '0（可能今日已签）'}</b>`;
+        `🎁 本次获得：<b>+${gained > 0 ? gained : '0（今日已签或数值异常）'}</b>`;
     } else if (creditsAfter !== null) {
-      message =
-        `✅ <b>Arkain 每日签到成功</b>\n\n` +
-        `📅 时间：${now}\n` +
-        `💰 当前积分：${creditsAfter} credits`;
+      message = `✅ <b>Arkain 每日签到成功</b>\n\n📅 时间：${now}\n💰 当前积分：${creditsAfter} credits`;
     } else {
-      message =
-        `✅ <b>Arkain 签到流程已完成</b>\n\n` +
-        `📅 时间：${now}\n` +
-        `⚠️ 积分读取失败，请手动确认`;
+      message = `✅ <b>Arkain 签到流程已完成</b>\n\n📅 时间：${now}\n⚠️ 积分读取失败，请手动确认`;
     }
-
-    console.log('通知:\n' + message.replace(/<[^>]+>/g, ''));
+    console.log('=== TG 通知 ===\n' + message.replace(/<[^>]+>/g, ''));
     await sendTelegram(tgToken, tgChatId, message);
 
   } catch (err) {
